@@ -144,9 +144,9 @@ func getHeight(client *http.Client, authToken, method, endpoint string) int {
 }
 
 func getAuthToken(p2pNetwork string) string {
-	out, err := exec.Command("celestia", "bridge", "auth", "admin", "--p2p.network", p2pNetwork).Output()
+	out, err := exec.Command("celestia", "bridge", "auth", "admin", "--p2p.network", p2pNetwork).CombinedOutput()
 	if err != nil {
-		log.Printf("Error getting auth token: %v\n", err)
+		log.Printf("Error getting auth token: %v, output: %s\n", err, string(out))
 		return ""
 	}
 
