@@ -38,6 +38,8 @@ func main() {
 	listenPort := flag.String("listen.port", "8380", "port to listen on")
 	endpoint := flag.String("endpoint", "http://localhost:26658", "endpoint to connect to")
 	p2pNetwork := flag.String("p2p.network", "blockspacerace", "network to use")
+	nodeStorePath := flag.String("node.store", "/default/path", "custom node store path")
+
 	flag.Parse()
 
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +48,7 @@ func main() {
 
 	go func() {
 		client := &http.Client{}
-		authToken := getAuthToken(*p2pNetwork)
+		authToken := getAuthToken(*p2pNetwork, *nodeStorePath) // Update this line
 		for {
 			updateMetrics(client, authToken, *endpoint)
 			time.Sleep(5 * time.Second)
@@ -142,10 +144,11 @@ func getHeight(client *http.Client, authToken, method, endpoint string) int {
 	return height
 }
 
-func getAuthToken(p2pNetwork string) string {
-	out, err := exec.Command("celestia", "bridge", "auth", "admin", "--p2p.network", p2pNetwork).CombinedOutput()
+func getAuthToken(p2pNetwork, nodeStorePath string) string {
+	cmd := exec.Command("celestia", "bridge", "auth", "admin", "--p2p.network", p2pNetwork, "--node.store", nodeStorePath)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("Error getting auth token: %v, output: %s\n", err, string(out))
+		fmt.Printf("Error getting auth token: %v, output: %s\n", err, string(out))
 		return ""
 	}
 
