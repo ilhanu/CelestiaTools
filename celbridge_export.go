@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os/exec"
 	"strconv"
@@ -40,6 +41,9 @@ func main() {
 	flag.Parse()
 
 	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		promhttp.Handler().ServeHTTP(w, r)
+	})
 
 	go func() {
 		client := &http.Client{}
@@ -50,20 +54,19 @@ func main() {
 		}
 	}()
 
-	fmt.Printf("Celestia Bridge Exporter started on port %s\n", *listenPort)
-	http.ListenAndServe(":"+*listenPort, nil)
+	log.Printf("Celestia Bridge Exporter started on port %s\n", *listenPort)
+	log.Fatal(http.ListenAndServe(":"+*listenPort, nil))
 }
 
 func updateMetrics(client *http.Client, authToken, endpoint string) {
 	local, network, err := getHeights(client, authToken, endpoint)
 	if err != nil {
-		fmt.Println("Error getting heights:", err)
+		log.Printf("Error getting heights: %v\n", err)
 		return
 	}
 
 	localHeight.Set(float64(local))
 	networkHeight.Set(float64(network))
-
 }
 
 func getHeights(client *http.Client, authToken, endpoint string) (int, int, error) {
@@ -82,24 +85,59 @@ func getHeight(client *http.Client, authToken, method, endpoint string) int {
 	}
 	reqBytes, _ := json.Marshal(reqData)
 
-	req, _ := http.NewRequest("POST", endpoint, bytes.NewReader(reqBytes))
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(reqBytes))
+	if err != nil {
+		log.Printf("Error creating request: %v\n", err)
+		return 0
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", authToken))
 
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("Error executing request: %v\n", err)
 		return 0
 	}
 	defer resp.Body.Close()
 
-	respBytes, _ := ioutil.ReadAll(resp.Body)
-	var respData map[string]interface{}
-	json.Unmarshal(respBytes, &respData)
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Non-OK HTTP status: %v\n", resp.Status)
+		return 0
+	}
 
-	heightStr := respData["result"].(map[string]interface{})["header"].(map[string]interface{})["height"].(string)
+	respBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading response body: %v\n", err)
+		return 0
+	}
+
+	var respData map[string]interface{}
+	if err := json.Unmarshal(respBytes, &respData); err != nil {
+		log.Printf("Error unmarshaling response: %v\n", err)
+		return 0
+	}
+
+	result, ok := respData["result"].(map[string]interface{})
+	if !ok {
+		log.Println("Error: result is not a map")
+		return 0
+	}
+
+	header, ok := result["header"].(map[string]interface{})
+	if !ok {
+		log.Println("Error: header is not a map")
+		return 0
+	}
+
+	heightStr, ok := header["height"].(string)
+	if !ok {
+		log.Println("Error: height is not a string")
+		return 0
+	}
+
 	height, err := strconv.Atoi(heightStr)
 	if err != nil {
-		fmt.Printf("Error converting height to int: %v\n", err)
+		log.Printf("Error converting height to int: %v\n", err)
 		return 0
 	}
 	return height
@@ -108,7 +146,7 @@ func getHeight(client *http.Client, authToken, method, endpoint string) int {
 func getAuthToken(p2pNetwork string) string {
 	out, err := exec.Command("celestia", "bridge", "auth", "admin", "--p2p.network", p2pNetwork).Output()
 	if err != nil {
-		fmt.Println("Error getting auth token:", err)
+		log.Printf("Error getting auth token: %v\n", err)
 		return ""
 	}
 
