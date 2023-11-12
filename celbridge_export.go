@@ -40,7 +40,6 @@ func main() {
 	p2pNetwork := flag.String("p2p.network", "blockspacerace", "network to use")
 	flag.Parse()
 
-	http.Handle("/metrics", promhttp.Handler())
 	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		promhttp.Handler().ServeHTTP(w, r)
 	})
